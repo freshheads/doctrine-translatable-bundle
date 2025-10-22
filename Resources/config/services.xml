@@ -11,6 +11,8 @@
     </parameters>
 
     <services>
+        <defaults autowire="true" autoconfigure="true"/>
+
         <service id="prezent_doctrine_translatable.driver_chain" class="%prezent_doctrine_translatable.driver_chain.class%" />
 
         <service id="prezent_doctrine_translatable.metadata_factory" class="%prezent_doctrine_translatable.metadata_factory.class%">

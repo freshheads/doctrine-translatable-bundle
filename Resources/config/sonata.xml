@@ -8,6 +8,7 @@
     </parameters>
 
     <services>
+        <defaults autowire="true" autoconfigure="true"/>
 
         <service id="prezent_doctrine_translatable.sonata.filter" class="%prezent_doctrine_translatable.sonata.filter.class%">
             <argument type="service" id="prezent_doctrine_translatable.listener" />

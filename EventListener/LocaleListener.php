@@ -12,6 +12,7 @@ namespace Prezent\Doctrine\TranslatableBundle\EventListener;
 use Prezent\Doctrine\Translatable\EventListener\TranslatableListener;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpKernel\Event\KernelEvent;
+use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 
 /**
@@ -42,7 +43,7 @@ class LocaleListener implements EventSubscriberInterface
      * @param RequestEvent $event
      * @return void
      */
-    public function onKernelRequest(KernelEvent $event)
+    public function onKernelRequest(RequestEvent $event)
     {
         $this->translatableListener->setCurrentLocale($event->getRequest()->getLocale());
     }
@@ -52,8 +53,10 @@ class LocaleListener implements EventSubscriberInterface
      */
     static public function getSubscribedEvents()
     {
-        return array(
-            KernelEvents::REQUEST => array(array('onKernelRequest', 10)),
-        );
+        return [
+            KernelEvents::REQUEST => [
+                ['onKernelRequest', 10],
+            ],
+        ];
     }
 }

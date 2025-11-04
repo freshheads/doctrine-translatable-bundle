@@ -11,10 +11,10 @@ namespace Prezent\Doctrine\TranslatableBundle\Filter;
 
 use Doctrine\ORM\Query\Expr;
 use Prezent\Doctrine\Translatable\EventListener\TranslatableListener;
-use Sonata\AdminBundle\Form\Type\Filter\ChoiceType;
-use Sonata\AdminBundle\Datagrid\ProxyQueryInterface;
+use Sonata\AdminBundle\Filter\Model\FilterData;
+use Sonata\AdminBundle\Form\Type\Operator\StringOperatorType;
+use Sonata\DoctrineORMAdminBundle\Datagrid\ProxyQueryInterface;
 use Sonata\DoctrineORMAdminBundle\Filter\StringFilter;
-use Symfony\Component\HttpFoundation\Request;
 
 /**
  * TranslatableFilter
@@ -35,38 +35,40 @@ class TranslatableFilter extends StringFilter
      */
     public function __construct(TranslatableListener $listener)
     {
+        parent::__construct();
         $this->listener = $listener;
     }
 
     /**
      * {@inheritdoc}
      */
-    public function filter(ProxyQueryInterface $queryBuilder, $alias, $field, $data)
+    public function filter(ProxyQueryInterface $query, string $alias, string $field, FilterData $data): void
     {
-        if (!$data || !is_array($data) || !array_key_exists('value', $data)) {
+        if (!$data->hasValue()) {
             return;
         }
 
-        $data['value'] = trim($data['value']);
+        $value = trim((string) ($data->getValue() ?? ''));
 
-        if (strlen($data['value']) == 0) {
+        if (strlen($value) == 0) {
             return;
         }
 
-        $data['type'] = !isset($data['type']) ?  ChoiceType::TYPE_CONTAINS : $data['type'];
-        $operator = $this->getOperator((int) $data['type']);
+        $type = $data->getType() ?? StringOperatorType::TYPE_CONTAINS;
+        $operator = $this->getOperator((int) $type);
 
         if (!$operator) {
             $operator = 'LIKE';
         }
 
+        $queryBuilder = $query->getQueryBuilder();
         $entities = $queryBuilder->getRootEntities();
         $classMetadata = $this->listener->getTranslatableMetadata(current($entities));
         $transMetadata = $this->listener->getTranslatableMetadata($classMetadata->targetEntity);
 
         // Add inner join
-        if (!$this->hasJoin($queryBuilder, $alias)) {
-            $parameterName = $this->getNewParameterName($queryBuilder);
+        if (!$this->hasJoin($query, $alias)) {
+            $parameterName = $this->getNewParameterName($query);
 
             $queryBuilder->innerJoin(
                 sprintf('%s.%s', $alias, $classMetadata->translations->name),
@@ -79,36 +81,44 @@ class TranslatableFilter extends StringFilter
         }
 
         // c.name > '1' => c.name OPERATOR :FIELDNAME
-        $parameterName = $this->getNewParameterName($queryBuilder);
+        $parameterName = $this->getNewParameterName($query);
 
         $or = $queryBuilder->expr()->orX();
 
         $or->add(sprintf('%s.%s %s :%s', 'trans', $field, $operator, $parameterName));
 
-        if (ChoiceType::TYPE_NOT_CONTAINS == $data['type']) {
+        if (StringOperatorType::TYPE_NOT_CONTAINS == $type) {
             $or->add($queryBuilder->expr()->isNull(sprintf('%s.%s', 'trans', $field)));
         }
 
-        $this->applyWhere($queryBuilder, $or);
+        $this->applyWhere($query, $or);
 
-        if ($data['type'] == ChoiceType::TYPE_EQUAL) {
-            $queryBuilder->setParameter($parameterName, $data['value']);
+        if ($type == StringOperatorType::TYPE_EQUAL) {
+            $queryBuilder->setParameter($parameterName, $value);
         } else {
-            $queryBuilder->setParameter($parameterName, sprintf($this->getOption('format'), $data['value']));
+            $format = match ($type) {
+                StringOperatorType::TYPE_STARTS_WITH => '%s%%',
+                StringOperatorType::TYPE_ENDS_WITH => '%%%s',
+                default => '%%%s%%',
+            };
+            $queryBuilder->setParameter($parameterName, sprintf($format, $value));
         }
     }
 
     /**
-     * @param string $type
+     * @param int $type
      *
-     * @return bool
+     * @return string|false
      */
-    private function getOperator($type)
+    private function getOperator(int $type)
     {
         $choices = array(
-            ChoiceType::TYPE_CONTAINS         => 'LIKE',
-            ChoiceType::TYPE_NOT_CONTAINS     => 'NOT LIKE',
-            ChoiceType::TYPE_EQUAL            => '=',
+            StringOperatorType::TYPE_CONTAINS         => 'LIKE',
+            StringOperatorType::TYPE_NOT_CONTAINS     => 'NOT LIKE',
+            StringOperatorType::TYPE_EQUAL            => '=',
+            StringOperatorType::TYPE_STARTS_WITH      => 'LIKE',
+            StringOperatorType::TYPE_ENDS_WITH        => 'LIKE',
+            StringOperatorType::TYPE_NOT_EQUAL        => '<>',
         );
 
         return isset($choices[$type]) ? $choices[$type] : false;
@@ -117,11 +127,13 @@ class TranslatableFilter extends StringFilter
     /**
      * Does the query builder have a translation join
      *
-     * @param ProxyQueryInterface $queryBuilder
+     * @param ProxyQueryInterface $query
+     * @param string $alias
      * @return bool
      */
-    private function hasJoin(ProxyQueryInterface $queryBuilder, $alias)
+    private function hasJoin(ProxyQueryInterface $query, string $alias): bool
     {
+        $queryBuilder = $query->getQueryBuilder();
         $joins = $queryBuilder->getDQLPart('join');
 
         if (!isset($joins[$alias])) {
